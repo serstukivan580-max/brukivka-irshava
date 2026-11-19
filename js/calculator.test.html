@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Тести калькулятора</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #F4F1EC; color: #1E1E1F; padding: 24px; max-width: 860px; margin: auto; }
+    h1 { font-family: Georgia, serif; font-weight: 500; }
+    li { padding: 8px 0; border-bottom: 1px solid #ddd; }
+    .pass { color: #2f6b3a; } .fail { color: #A3362A; font-weight: 600; }
+    #summary { font-size: 20px; margin: 16px 0; }
+    code { background: #fff; padding: 1px 5px; }
+  </style>
+</head>
+<body>
+  <h1>Тести калькулятора</h1>
+  <p>Ціни тут фіксовані (тестові), щоб тести не залежали від <code>config.js</code>.</p>
+  <p id="summary"></p>
+  <ol id="out"></ol>
+
+  <script src="calculator.js"></script>
+  <script>
+    var C = window.BRUK.calc;
+    var PRICES = {
+      currency: 'грн',
+      tile: { brick: 400, oldtown: 500, square: 450, premium: 800 },
+      labor: { 4: 300, 6: 400, 8: 500 },
+      demolition: 100, excavation: 150, base: 250, curb: 400, drain: 600,
+      reserveRatio: 0.05, minOrder: 0
+    };
+    function base(over) {
+      var o = { mode: 'area', area: '100', length: '', width: '', tile: 'brick', thickness: 6, material: 'ours',
+        demolition: false, excavation: false, base: false, curb: false, curbLength: '', drain: false, drainLength: '' };
+      for (var k in over) o[k] = over[k];
+      return o;
+    }
+
+    var tests = [
+      ['100 м², цегла 6 см, без доп. робіт = 100×1.05×400 + 100×400 = 82 000', function () {
+        var r = C.calculate(base({}), PRICES);
+        return r.ok && r.total === 82000;
+      }],
+      ['Довжина × ширина 10 × 6 = 60 м²', function () {
+        var r = C.calculate(base({ mode: 'dims', length: '10', width: '6' }), PRICES);
+        return r.ok && r.area === 60;
+      }],
+      ['Кома як десятковий розділювач: «12,5» = 12.5 м²', function () {
+        var r = C.calculate(base({ area: '12,5' }), PRICES);
+        return r.ok && r.area === 12.5;
+      }],
+      ['Матеріал замовника — без рядка «Бруківка»: 100×400 = 40 000', function () {
+        var r = C.calculate(base({ material: 'client' }), PRICES);
+        return r.ok && r.total === 40000 && !r.lines.some(function (l) { return l.key === 'material'; });
+      }],
+      ['Усі доп. роботи: 82 000 + 100×500 + 20×400 + 5×600 = 143 000', function () {
+        var r = C.calculate(base({ demolition: true, excavation: true, base: true,
+          curb: true, curbLength: '20', drain: true, drainLength: '5' }), PRICES);
+        return r.ok && r.total === 143000;
+      }],
+      ['Порожня площа → помилка, без NaN', function () {
+        var r = C.calculate(base({ area: '' }), PRICES);
+        return !r.ok && !!r.errors.area && C.formatMoney(r.total) === '—';
+      }],
+      ['Нуль, від\'ємне та літери → помилки', function () {
+        return !C.calculate(base({ area: '0' }), PRICES).ok &&
+               !C.calculate(base({ area: '-5' }), PRICES).ok &&
+               !C.calculate(base({ area: 'abc' }), PRICES).ok &&
+               !C.calculate(base({ area: '12abc' }), PRICES).ok;
+      }],
+      ['Площа понад 5000 м² → помилка', function () {
+        return !C.calculate(base({ area: '5001' }), PRICES).ok &&
+               !C.calculate(base({ mode: 'dims', length: '100', width: '60' }), PRICES).ok;
+      }],
+      ['Бордюр увімкнено, але довжина порожня → помилка curbLength', function () {
+        var r = C.calculate(base({ curb: true, curbLength: '' }), PRICES);
+        return !r.ok && !!r.errors.curbLength;
+      }],
+      ['Бордюр вимкнено — порожня довжина не заважає', function () {
+        return C.calculate(base({ curb: false, curbLength: '' }), PRICES).ok;
+      }],
+      ['Мінімальне замовлення застосовується', function () {
+        var p = JSON.parse(JSON.stringify(PRICES)); p.minOrder = 50000;
+        var r = C.calculate(base({ area: '10' }), p);
+        return r.ok && r.total === 50000 && r.minApplied === true;
+      }],
+      ['formatMoney: 143000 → «143 000 грн»', function () {
+        return C.formatMoney(143000, 'грн') === '143 000 грн';
+      }]
+    ];
+
+    var out = document.getElementById('out'), passed = 0;
+    tests.forEach(function (t) {
+      var ok = false, err = '';
+      try { ok = t[1](); } catch (e) { err = ' — ' + e.message; }
+      if (ok) passed++;
+      var li = document.createElement('li');
+      li.className = ok ? 'pass' : 'fail';
+      li.textContent = (ok ? '✅ ' : '❌ ') + t[0] + err;
+      out.appendChild(li);
+    });
+    document.getElementById('summary').textContent = 'Пройдено ' + passed + ' з ' + tests.length + (passed === tests.length ? ' ✅' : ' ❌');
+    document.title = (passed === tests.length ? 'PASS ' : 'FAIL ') + passed + '/' + tests.length;
+  </script>
+</body>
+</html>
